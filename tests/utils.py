@@ -45,11 +45,13 @@ def connect_to(host: str, port: str, udp: bool = False) -> socket:
 
 
 def assert_connect_is_logged(
-    connect: dict[str, str], port: str, expected_keys: list[str] | tuple[str, ...] = EXPECTED_KEYS
+    connect: dict[str, str],
+    port: int | str,
+    expected_keys: list[str] | tuple[str, ...] = EXPECTED_KEYS,
 ):
     assert all(k in connect for k in expected_keys)
     assert connect["dest_ip"] == IP
-    assert connect["dest_port"] == port
+    assert connect["dest_port"] == str(port)
     assert connect["action"] == "connection"
 
 

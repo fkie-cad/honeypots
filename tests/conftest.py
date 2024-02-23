@@ -33,7 +33,7 @@ def server_logs(request):
     with config_for_testing(custom_config) as config_file:
         _server = request.param["server"](
             ip=IP,
-            port=request.param["port"],
+            port=str(request.param["port"]),
             username=USERNAME,
             password=PASSWORD,
             options="",

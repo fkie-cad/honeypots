@@ -23,6 +23,7 @@ from psutil import net_io_counters, Process
 from honeypots import (
     QBSniffer,
     QDHCPServer,
+    QDicomServer,
     QDNSServer,
     QElasticServer,
     QFTPServer,
@@ -59,6 +60,7 @@ from honeypots import (
 
 all_servers = {
     "dhcp": QDHCPServer,
+    "dicom": QDicomServer,
     "dns": QDNSServer,
     "elastic": QElasticServer,
     "ftp": QFTPServer,

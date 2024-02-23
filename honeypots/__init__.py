@@ -1,4 +1,5 @@
 from .dhcp_server import QDHCPServer
+from .dicom_server import QDicomServer
 from .dns_server import QDNSServer
 from .elastic_server import QElasticServer
 from .ftp_server import QFTPServer
@@ -43,6 +44,7 @@ from .vnc_server import QVNCServer
 __all__ = [
     "QBSniffer",
     "QDHCPServer",
+    "QDicomServer",
     "QDNSServer",
     "QElasticServer",
     "QFTPServer",
