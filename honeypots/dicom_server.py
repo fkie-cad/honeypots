@@ -191,9 +191,8 @@ class QDicomServer(BaseServer):
             context.scp_role = True
             context.scu_role = False
 
-        with (
-            patch("pynetdicom.association.DULServiceProvider", CustomDUL),
-            patch("pynetdicom.ae.AssociationServer", CustomAssociationServer),
+        with patch("pynetdicom.association.DULServiceProvider", CustomDUL), patch(
+            "pynetdicom.ae.AssociationServer", CustomAssociationServer
         ):
             app_entity.start_server((self.ip, self.port), block=True, evt_handlers=handlers)
 
