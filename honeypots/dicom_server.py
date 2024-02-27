@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from enum import Enum
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -35,13 +36,15 @@ UNINTERESTING_EVENTS = {
     "EVT_SOP_EXTENDED",
     "EVT_SOP_COMMON",
 }
-ID_TYPE_TO_STR = {
-    1: "Username as a UTF-8 string",
-    2: "Username as a UTF-8 string and passcode",
-    3: "Kerberos Service ticket",
-    4: "SAML Assertion",
-    5: "JSON Web Token",
-}
+
+
+class UserIdType(Enum):
+    username = 1
+    username_and_passcode = 2
+    kerberos = 3
+    saml = 4
+    jwt = 5
+
 
 if TYPE_CHECKING:
     from socket import socket
@@ -67,7 +70,7 @@ class QDicomServer(BaseServer):
                 try:
                     _q_s.log(
                         {
-                            "action": type(pdu).__name__,
+                            "action": type(pdu).__name__.replace("_", "-"),
                             "data": _dicom_obj_to_dict(pdu),
                         }
                     )
@@ -95,18 +98,57 @@ class QDicomServer(BaseServer):
                 )
                 super().process_request(request, client_address)
 
+        def handle_login(event: evt.Event, *_) -> tuple[bool, bytes | None]:
+            # EVT_USER_ID event
+            # see https://pydicom.github.io/pynetdicom/stable/reference/generated/pynetdicom._handlers.doc_handle_userid.html
+            user_id_type = UserIdType(event.user_id_type)
+            if user_id_type == UserIdType.username_and_passcode:
+                username = event.primary_field.decode()
+                password = event.secondary_field.decode()
+                success = _q_s.check_login(
+                    username,
+                    password,
+                    ip=event.assoc.requestor.address,
+                    port=event.assoc.requestor.port,
+                )
+                return success, None
+            if user_id_type == UserIdType.username:
+                username = event.primary_field.decode()
+                _q_s.log(
+                    {
+                        "action": "login",
+                        "username": username,
+                        "status": "success",
+                        "data": {"login_format": user_id_type.name},
+                    }
+                )
+                return True, None
+            if user_id_type == UserIdType.kerberos:
+                _log_id_event("kerberos_ticket", event)
+            elif user_id_type == UserIdType.jwt:
+                _log_id_event("json_web_token", event)
+            else:  # SAML
+                _log_id_event("saml_assertion", event)
+            return False, None
+
+        def _log_id_event(data_type: str, event: evt.Event):
+            _q_s.log(
+                {
+                    "action": "login",
+                    "status": "failed",
+                    "data": {
+                        "login_format": UserIdType(event.user_id_type).name,
+                        data_type: event.primary_field.decode(),
+                    },
+                }
+            )
+
         def handle_event(event: evt.Event, *_):
             # generic event handler
             try:
                 data = {
                     "description": event.event.description,
                 }
-                if isinstance(event, evt.EVT_USER_ID):
-                    # see https://pydicom.github.io/pynetdicom/stable/reference/generated/pynetdicom._handlers.doc_handle_userid.html
-                    data["user_id_type"] = ID_TYPE_TO_STR[event.user_id_type]
-                    data["username"] = event.primary_field
-                    if event.user_id_type == 0x2:  # noqa: PLR2004
-                        data["password"] = event.secondary_field
                 if hasattr(event, "context"):
                     data.update(
                         {
@@ -127,7 +169,7 @@ class QDicomServer(BaseServer):
             return SUCCESS
 
         handlers = [
-            (event_, handle_event)
+            (event_, handle_event) if event_.name != "EVT_USER_ID" else (event_, handle_login)
             for event_ in evt._INTERVENTION_EVENTS
             if event_.name not in UNINTERESTING_EVENTS
         ]
