@@ -17,10 +17,7 @@ from twisted.internet import reactor
 from twisted.internet.protocol import DatagramProtocol
 
 from honeypots.base_server import BaseServer
-from honeypots.helper import (
-    server_arguments,
-    check_bytes,
-)
+from honeypots.helper import check_bytes, server_arguments
 
 
 class QDHCPServer(BaseServer):
