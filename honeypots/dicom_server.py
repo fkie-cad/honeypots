@@ -31,6 +31,9 @@ from honeypots.helper import (
     server_arguments,
 )
 
+if TYPE_CHECKING:
+    from socket import socket
+
 UNINTERESTING_EVENTS = {
     "EVT_ASYNC_OPS",
     "EVT_SOP_EXTENDED",
@@ -45,9 +48,6 @@ class UserIdType(Enum):
     saml = 4
     jwt = 5
 
-
-if TYPE_CHECKING:
-    from socket import socket
 
 SUCCESS = 0x0000
 
