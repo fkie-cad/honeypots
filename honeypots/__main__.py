@@ -8,6 +8,7 @@ from argparse import ArgumentParser, SUPPRESS, Namespace
 from atexit import register
 from functools import wraps
 from json import JSONDecodeError, loads
+from threading import Event
 from os import geteuid
 from pathlib import Path
 from signal import alarm, SIGALRM, SIGINT, signal, SIGTERM, SIGTSTP
@@ -116,6 +117,8 @@ class Termination:
             input("")
         elif self.strategy == "signal":
             SignalFence([SIGTERM, SIGINT, SIGTSTP]).wait_on_fence()
+        elif isinstance(self.strategy, Event):  # used for testing only
+            self.strategy.wait()
         else:
             raise Exception(f"Unknown termination strategy: {self.strategy}")
 
@@ -278,8 +281,6 @@ class HoneypotsManager:
                 server.kill_server()
             except Exception as error:
                 logger.exception(f"Error when killing server {name}: {error}")
-        logger.info("[x] Please wait few seconds")
-        sleep(5)
 
     def _start_chameleon_mode(self):  # noqa: C901,PLR0912
         logger.info("[x] Chameleon mode")
