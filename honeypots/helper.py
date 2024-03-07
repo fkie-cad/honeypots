@@ -130,7 +130,7 @@ def _parse_record(record: LogRecord, custom_filter: dict, type_: str) -> LogReco
     return record
 
 
-def setup_logger(name: str, temp_name: str, config: str, drop: bool = False):
+def setup_logger(name: str, temp_name: str, config: str | None, drop: bool = False):
     logs = "terminal"
     logs_location = ""
     config_data = {}
@@ -570,12 +570,12 @@ def server_arguments():
     _server_parsergroupdeq.add_argument(
         "--options", type=str, help="Extra options", metavar="", default=""
     )
-    _server_parsergroupdes = _server_parser.add_argument_group("Sinffer options")
+    _server_parsergroupdes = _server_parser.add_argument_group("Sniffer options")
     _server_parsergroupdes.add_argument(
-        "--filter", type=str, help="setup the Sinffer filter", required=False
+        "--filter", type=str, help="setup the Sniffer filter", required=False
     )
     _server_parsergroupdes.add_argument(
-        "--interface", type=str, help="sinffer interface E.g eth0", required=False
+        "--interface", type=str, help="sniffer interface E.g eth0", required=False
     )
     _server_parsergroupdef = _server_parser.add_argument_group("Initialize Loging")
     _server_parsergroupdef.add_argument(

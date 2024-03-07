@@ -17,7 +17,7 @@ PORT = 50022
 SERVER_CONFIG = {
     "honeypots": {
         "ssh": {
-            "options": ["capture_commands"],
+            "options": ["capture_commands", "interactive"],
         },
     }
 }
@@ -33,7 +33,8 @@ def test_ssh_server(server_logs):
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(IP, port=PORT, username=USERNAME, password=PASSWORD)
-        ssh.exec_command("ls")
+        _, stdout, _ = ssh.exec_command("ls")
+        response = stdout.read()
         ssh.close()
 
     logs = load_logs_from_file(server_logs)
@@ -46,3 +47,6 @@ def test_ssh_server(server_logs):
     assert command["data"] == {"command": "ls"}
     assert login["action"] == "login"
     assert login["username"] == USERNAME
+
+    assert b"Welcome to Ubuntu" in response
+    assert b"tmp usr var" in response

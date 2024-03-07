@@ -29,7 +29,7 @@ from .oracle_server import QOracleServer
 from .pjl_server import QPJLServer
 from .pop3_server import QPOP3Server
 from .postgres_server import QPostgresServer
-from .qbsniffer import QBSniffer
+from .sniffer import QSniffer
 from .rdp_server import QRDPServer
 from .redis_server import QRedisServer
 from .sip_server import QSIPServer
@@ -42,7 +42,7 @@ from .telnet_server import QTelnetServer
 from .vnc_server import QVNCServer
 
 __all__ = [
-    "QBSniffer",
+    "QSniffer",
     "QDHCPServer",
     "QDicomServer",
     "QDNSServer",
