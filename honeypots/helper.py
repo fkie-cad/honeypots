@@ -148,23 +148,9 @@ def _parse_record(record: LogRecord, custom_filter: dict, type_: str) -> LogReco
     return record
 
 
-def setup_logger(name: str, temp_name: str, config: dict, drop: bool = False):
-    logs = "terminal"
-    logs_location = ""
-    config_data = config or {}
-    custom_filter = None
-    if config:
-        try:
-            logs = config_data.get("logs", logs)
-            logs_location = config_data.get("logs_location", logs_location)
-            custom_filter = config_data.get("custom_filter", custom_filter)
-        except json.JSONDecodeError as error:
-            logger.error(f"Could not parse config '{config}' as JSON: {error}")
-        except OSError as error:
-            logger.error(f"Could not read config file '{config}': {error}")
-
-    logs_path = Path(logs_location) if logs_location else Path(gettempdir()) / "logs"
-    logs_path.mkdir(parents=True, exist_ok=True)
+def setup_logger(name: str, temp_name: str, config_data: dict, drop: bool = False):
+    logs = config_data.get("logs", "terminal")
+    custom_filter = config_data.get("custom_filter", None)
 
     ret_logs_obj = getLogger(temp_name)
     ret_logs_obj.setLevel(DEBUG)
@@ -175,6 +161,9 @@ def setup_logger(name: str, temp_name: str, config: dict, drop: bool = False):
     if "file" in logs:
         server = name[1:].lower().replace("server", "")
         server_config = config_data.get("honeypots", {}).get(server, {})
+        logs_location = config_data.get("logs_location")
+        logs_path = Path(logs_location) if logs_location else Path(gettempdir()) / "logs"
+        logs_path.mkdir(parents=True, exist_ok=True)
         file_handler = CustomHandlerFileRotate(
             str(logs_path / server_config.get("log_file_name", temp_name)),
             logs=logs,
@@ -587,12 +576,12 @@ def server_arguments():
     _server_parsergroupdeq.add_argument(
         "--options", type=str, help="Extra options", metavar="", default=""
     )
-    _server_parsergroupdes = _server_parser.add_argument_group("Sinffer options")
+    _server_parsergroupdes = _server_parser.add_argument_group("Sniffer options")
     _server_parsergroupdes.add_argument(
-        "--filter", type=str, help="setup the Sinffer filter", required=False
+        "--filter", type=str, help="setup the Sniffer filter", required=False
     )
     _server_parsergroupdes.add_argument(
-        "--interface", type=str, help="sinffer interface E.g eth0", required=False
+        "--interface", type=str, help="sniffer interface E.g eth0", required=False
     )
     _server_parsergroupdef = _server_parser.add_argument_group("Initialize Loging")
     _server_parsergroupdef.add_argument(
@@ -731,7 +720,7 @@ def run_single_server(server_class: Type[BaseServer]):
         server.run_server()
 
 
-def load_config(config_path: str):
+def load_config(config_path: str) -> dict:
     config_file = Path(config_path)
     if not config_file.is_file():
         logger.error(f'Config file "{config_file}" not found')

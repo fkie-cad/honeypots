@@ -118,7 +118,7 @@ class QSSHServer(BaseServer):
                     return AUTH_SUCCESSFUL
                 return AUTH_FAILED
 
-            def check_channel_exec_request(self, channel, command):  # noqa: ARG002
+            def check_channel_exec_request(self, channel: Channel, command: bytes):
                 if "capture_commands" in _q_s.options:
                     _q_s.log(
                         {
@@ -129,6 +129,8 @@ class QSSHServer(BaseServer):
                         }
                     )
                 self.event.set()
+                success = _respond(channel, command.decode(errors="replace"))
+                channel.send_exit_status(0 if success else 255)
                 return True
 
             def get_allowed_auths(self, *_, **__):
@@ -146,7 +148,7 @@ class QSSHServer(BaseServer):
                 )
                 return AUTH_SUCCESSFUL
 
-            def check_channel_shell_request(self, *_, **__):
+            def check_channel_shell_request(self, channel):  # noqa: ARG002
                 return True
 
             def check_channel_direct_tcpip_request(self, *_, **__):
@@ -169,7 +171,7 @@ class QSSHServer(BaseServer):
                 }
             )
 
-            with Transport(client) as session:
+            with suppress(AttributeError), Transport(client) as session:
                 session.local_version = f"SSH-2.0-{_q_s.mocking_server}"
                 session.add_server_key(RSAKey(file_obj=StringIO(priv)))
                 ssh_handle = SSHHandle(ip, port)
@@ -256,9 +258,9 @@ def _receive_line(conn: Channel) -> str:
     return line.strip().decode(errors="replace")
 
 
-def _respond(conn: Channel, line: str):
+def _respond(conn: Channel, line: str) -> bool:
     if line == "" or line.endswith(CTRL_C.decode()):
-        return
+        return False
     if line in COMMANDS:
         response = COMMANDS.get(line)
         if "%TIME" in response:
@@ -266,7 +268,8 @@ def _respond(conn: Channel, line: str):
                 "%TIME", datetime.now().strftime("%a %b %d %H:%M:%S UTC %Y")
             )
         conn.send(f"{response}\r\n".encode())
-    elif line.startswith("cd "):
+        return True
+    if line.startswith("cd "):
         target = _parse_args(line)
         if not target:
             conn.send(b"\r\n")
@@ -278,10 +281,11 @@ def _respond(conn: Channel, line: str):
         target = _parse_args(line)
         if not target:
             conn.send(f"{COMMANDS['ls']}\r\n".encode())
-        else:
-            conn.send(f"ls: cannot open directory '{target}': Permission denied\r\n".encode())
+            return True
+        conn.send(f"ls: cannot open directory '{target}': Permission denied\r\n".encode())
     else:
         conn.send(f"{line}: command not found\r\n".encode())
+    return False
 
 
 def _parse_args(line: str) -> str | None:
