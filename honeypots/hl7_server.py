@@ -10,8 +10,8 @@
 from __future__ import annotations
 
 import re
+import socket
 from collections import defaultdict
-from contextlib import suppress
 from datetime import datetime, timezone
 from random import randint
 
@@ -50,7 +50,7 @@ class HL7Server(BaseServer):
         _q_s = self
 
         class CustomMLLPRequestHandler(MLLPRequestHandler):
-            def _route_message(self, msg):
+            def handle(self):
                 src_ip, src_port = self.client_address
                 _q_s.log(
                     {
@@ -59,12 +59,32 @@ class HL7Server(BaseServer):
                         "src_port": src_port,
                     }
                 )
-                return super()._route_message(msg)
 
-            def handle(self):
-                with suppress(ConnectionResetError):
-                    # we don't care about connection reset errors here
-                    super().handle()
+                # mostly the implementation from MLLPRequestHandler except for two details:
+                # - we keep the TCP connection open to handle multiple messages (if there are any)
+                # - we also handle ConnectionResetErrors (often happen during port scans)
+                while True:
+                    try:
+                        line = self._receive_line()
+                        message = self._extract_hl7_message(line)
+                        if message is not None:
+                            response = self._route_message(message)
+                            self.wfile.write(response.encode(self.encoding))
+                    except (socket.timeout, ConnectionResetError, ValueError, UnicodeDecodeError):
+                        self.request.close()
+                        return
+
+            def _receive_line(self) -> str:
+                end_seq = self.eb + self.cr
+                line = self.request.recv(3)
+                if line[:1] != self.sb:
+                    raise ValueError
+                while not line.endswith(end_seq):
+                    char = self.rfile.read(1)
+                    if not char:
+                        break
+                    line += char
+                return line.decode(self.encoding)
 
         class CustomPDQHandler(AbstractHandler):
             def __init__(self, *args, **kwargs):
@@ -190,6 +210,7 @@ class HL7Server(BaseServer):
         server = MLLPServer(
             self.ip, self.port, handlers, request_handler_class=CustomMLLPRequestHandler
         )
+        server.refuse_multiple_connections = False
         server.serve_forever()
 
 
