@@ -26,7 +26,7 @@ def test_hl7_server(server_logs):
     with wait_for_server(PORT), connect_to(IP, PORT) as connection:
         message = parse_message(
             "\x0bMSH|^~\\&|sending_app|sending_facility|receiving_app|receiving_facility|"
-            f"20240214100348||ADT^A01|{id_}|T|2.3\r\x1c\r"
+            f"20240214100348||ADT^A01^ADT_A01|{id_}|T|2.3\r\x1c\r"
         )
         connection.send(message.to_mllp().encode())
         response = connection.recv(1024).decode()
@@ -34,7 +34,7 @@ def test_hl7_server(server_logs):
     logs = load_logs_from_file(server_logs)
 
     assert len(logs) == 2
-    assert "ACK" in response
+    assert "ACK^A01" in response
     connect, query = logs
     assert_connect_is_logged(connect, PORT)
 

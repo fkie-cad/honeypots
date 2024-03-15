@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from contextlib import suppress
 from random import randint
@@ -86,11 +87,13 @@ class HL7Server(BaseServer):
                 receiving_app = self._get_optional_field("msh_5")
                 receiving_facility = self._get_optional_field("msh_6")
                 processing_id = self._get_optional_field("msh_11")
+                type_elements = re.split(r"[_^]", self._get_optional_field("msh_9"))
+                message_type = f"ACK^{type_elements[1]}" if len(type_elements) > 1 else "ACK"
                 self._add_field_to_header("MSH_3", receiving_app)
                 self._add_field_to_header("MSH_4", receiving_facility)
                 self._add_field_to_header("MSH_5", sending_app)
                 self._add_field_to_header("MSH_6", sending_facility)
-                self._add_field_to_header("MSH_9", "ACK")
+                self._add_field_to_header("MSH_9", message_type)
                 self._add_field_to_header("MSH_10", str(randint(1000, 9000)))
                 self._add_field_to_header("MSH_11", processing_id)
 
@@ -115,7 +118,7 @@ class HL7Server(BaseServer):
                         "fields": [
                             {
                                 "name": field.name,
-                                "type": field.datatype,
+                                "type": field.long_name or field.datatype,
                                 "value": field.value,
                             }
                             for field in segment.children
