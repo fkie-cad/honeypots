@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from contextlib import suppress
+from datetime import datetime, timezone
 from random import randint
 
 from hl7apy.core import Message, Field
@@ -26,6 +27,19 @@ from hl7apy.parser import parse_message, parse_segment
 
 from honeypots.base_server import BaseServer
 from honeypots.helper import run_single_server
+
+HL7_SPLIT_REGEX = re.compile(r"[_^]")
+
+
+class Hl7Header:
+    SENDING_APPLICATION = "MSH_3"
+    SENDING_FACILITY = "MSH_4"
+    RECEIVING_APPLICATION = "MSH_5"
+    RECEIVING_FACILITY = "MSH_6"
+    MESSAGE_TYPE = "MSH_9"
+    MESSAGE_CONTROL_ID = "MSH_10"
+    PROCESSING_ID = "MSH_11"
+    VERSION_ID = "MSH_12"
 
 
 class HL7Server(BaseServer):
@@ -57,7 +71,7 @@ class HL7Server(BaseServer):
                 super().__init__(*args, **kwargs)
                 try:
                     self.message = parse_message(self.incoming_message)
-                    self.version = self._get_optional_field("msh_12") or "2.5"
+                    self.version = self._get_optional_field(Hl7Header.VERSION_ID) or "2.5"
                 except Exception:
                     self.message = None
                     self.version = None
@@ -74,7 +88,8 @@ class HL7Server(BaseServer):
                         }
                     )
                     self._populate_header()
-                    control_id = self._get_optional_field("msh_10")
+                    control_id = self._get_optional_field(Hl7Header.MESSAGE_CONTROL_ID)
+                    # the "AA" means that the incoming message was accepted
                     ack_segment = parse_segment(f"MSA|AA|{control_id}", version=self.version)
                     self.response.add(ack_segment)
                 except Exception as error:
@@ -82,20 +97,51 @@ class HL7Server(BaseServer):
                 return self.response.to_mllp()
 
             def _populate_header(self):
-                sending_app = self._get_optional_field("msh_3")
-                sending_facility = self._get_optional_field("msh_4")
-                receiving_app = self._get_optional_field("msh_5")
-                receiving_facility = self._get_optional_field("msh_6")
-                processing_id = self._get_optional_field("msh_11")
-                type_elements = re.split(r"[_^]", self._get_optional_field("msh_9"))
-                message_type = f"ACK^{type_elements[1]}" if len(type_elements) > 1 else "ACK"
-                self._add_field_to_header("MSH_3", receiving_app)
-                self._add_field_to_header("MSH_4", receiving_facility)
-                self._add_field_to_header("MSH_5", sending_app)
-                self._add_field_to_header("MSH_6", sending_facility)
-                self._add_field_to_header("MSH_9", message_type)
-                self._add_field_to_header("MSH_10", str(randint(1000, 9000)))
-                self._add_field_to_header("MSH_11", processing_id)
+                # just swap sending/receiving app/facility and reuse the ID for the response
+                self._add_field_to_header(
+                    Hl7Header.SENDING_APPLICATION,
+                    self._get_optional_field(Hl7Header.RECEIVING_APPLICATION),
+                )
+                self._add_field_to_header(
+                    Hl7Header.SENDING_FACILITY,
+                    self._get_optional_field(Hl7Header.RECEIVING_FACILITY),
+                )
+                self._add_field_to_header(
+                    Hl7Header.RECEIVING_APPLICATION,
+                    self._get_optional_field(Hl7Header.SENDING_APPLICATION),
+                )
+                self._add_field_to_header(
+                    Hl7Header.RECEIVING_FACILITY,
+                    self._get_optional_field(Hl7Header.SENDING_FACILITY),
+                )
+                self._add_field_to_header(
+                    Hl7Header.MESSAGE_TYPE,
+                    self._get_response_message_type(),
+                )
+                self._add_field_to_header(
+                    Hl7Header.MESSAGE_CONTROL_ID,
+                    str(randint(1000, 9000)),
+                )
+                self._add_field_to_header(
+                    Hl7Header.PROCESSING_ID,
+                    self._get_optional_field(Hl7Header.PROCESSING_ID),
+                )
+                # overwrite the date time field with one that includes milliseconds and a timezone
+                t_str = datetime.now().astimezone(timezone.utc).strftime("%Y%m%d%H%M%S.%f%z")
+                self.response.msh.msh_7.value = t_str[:-8] + t_str[-5:]  # µs -> ms
+
+            def _get_response_message_type(self) -> str:
+                try:
+                    # the event code is part of the message type, and we need it for the response.
+                    # structure is usually something like "ADT^A04[^ADT_A04]" [optional]
+                    # with "A04" being the event code that we want
+                    _, event, *_ = HL7_SPLIT_REGEX.split(
+                        self._get_optional_field(Hl7Header.MESSAGE_TYPE)
+                    )
+                    return f"ACK^{event}"
+                except (TypeError, ValueError):
+                    # otherwise we just use "ACK" as message type
+                    return "ACK"
 
             def _add_field_to_header(self, field: str, value: str):
                 if value is None:
