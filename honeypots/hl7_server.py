@@ -140,7 +140,7 @@ class HL7Server(BaseServer):
                 )
                 self._add_field_to_header(
                     Hl7Header.MESSAGE_CONTROL_ID,
-                    str(randint(1000, 9000)),
+                    str(randint(10000, 99999)),
                 )
                 self._add_field_to_header(
                     Hl7Header.PROCESSING_ID,
