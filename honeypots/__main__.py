@@ -21,6 +21,7 @@ from honeypots import (
     HL7Server,
     QSniffer,
     QDHCPServer,
+    QDicomServer,
     QDNSServer,
     QElasticServer,
     QFTPServer,
@@ -62,6 +63,7 @@ if TYPE_CHECKING:
 
 all_servers = {
     "dhcp": QDHCPServer,
+    "dicom": QDicomServer,
     "dns": QDNSServer,
     "elastic": QElasticServer,
     "ftp": QFTPServer,
