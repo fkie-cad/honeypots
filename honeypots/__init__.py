@@ -1,4 +1,5 @@
 from .dhcp_server import QDHCPServer
+from .dicom_server import QDicomServer
 from .dns_server import QDNSServer
 from .elastic_server import QElasticServer
 from .ftp_server import QFTPServer
@@ -9,10 +10,10 @@ from .helper import (
     kill_servers,
     PostgresClass,
     server_arguments,
-    set_local_vars,
     setup_logger,
     set_up_error_logging,
 )
+from .hl7_server import HL7Server
 from .http_proxy_server import QHTTPProxyServer
 from .http_server import QHTTPServer
 from .https_server import QHTTPSServer
@@ -41,8 +42,10 @@ from .telnet_server import QTelnetServer
 from .vnc_server import QVNCServer
 
 __all__ = [
+    "HL7Server",
     "QSniffer",
     "QDHCPServer",
+    "QDicomServer",
     "QDNSServer",
     "QElasticServer",
     "QFTPServer",
@@ -77,7 +80,6 @@ __all__ = [
     "kill_servers",
     "PostgresClass",
     "server_arguments",
-    "set_local_vars",
     "setup_logger",
     "set_up_error_logging",
 ]
