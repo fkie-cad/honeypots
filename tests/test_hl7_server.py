@@ -13,11 +13,19 @@ from .utils import (
 )
 
 PORT = "52575"
+LOG_FILE_NAME = "hl7.jsonl"
+SERVER_CONFIG = {
+    "honeypots": {
+        "hl7": {
+            "log_file_name": LOG_FILE_NAME,
+        },
+    }
+}
 
 
 @pytest.mark.parametrize(
     "server_logs",
-    [{"server": HL7Server, "port": PORT}],
+    [{"server": HL7Server, "port": PORT, "custom_config": SERVER_CONFIG}],
     indirect=True,
 )
 def test_hl7_server(server_logs):
@@ -31,6 +39,8 @@ def test_hl7_server(server_logs):
         connection.send(message.to_mllp().encode())
         response = connection.recv(1024).decode()
 
+    log_file = [f.name for f in server_logs.iterdir()][0]
+    assert log_file == LOG_FILE_NAME
     logs = load_logs_from_file(server_logs)
 
     assert len(logs) == 2

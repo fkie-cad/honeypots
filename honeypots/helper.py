@@ -159,7 +159,7 @@ def setup_logger(name: str, temp_name: str, config_data: dict, drop: bool = Fals
     elif "terminal" in logs:
         ret_logs_obj.addHandler(CustomHandler(temp_name, logs, custom_filter))
     if "file" in logs:
-        server = name[1:].lower().replace("server", "")
+        server = name.replace("_server", "")
         server_config = config_data.get("honeypots", {}).get(server, {})
         logs_location = config_data.get("logs_location")
         logs_path = Path(logs_location) if logs_location else Path(gettempdir()) / "logs"
