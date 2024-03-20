@@ -15,10 +15,12 @@ from .utils import (
 
 PORT = "58080"
 PORT_2 = "58081"
+LOG_FILE_NAME = "httpproxy.jsonl"
 SERVER_CONFIG = {
     "honeypots": {
         "httpproxy": {
             "options": ["capture_commands"],
+            "log_file_name": LOG_FILE_NAME,
         },
     }
 }
@@ -37,6 +39,8 @@ def test_http_proxy_server(server_logs):
             timeout=2,
         )
 
+    log_file = [f.name for f in server_logs.iterdir()][0]
+    assert log_file == LOG_FILE_NAME
     logs = load_logs_from_file(server_logs)
 
     assert len(logs) == 2
