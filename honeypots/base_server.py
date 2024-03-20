@@ -30,7 +30,7 @@ class BaseServer(ABC):
         self.process = None
         self.uuid = f"honeypotslogger_{self.__class__.__name__}_{str(uuid4())[:8]}"
         self.config: dict = kwargs.get("config", {})
-        self.logs = setup_logger(self.__class__.__name__, self.uuid, self.config)
+        self.logs = setup_logger(self.NAME, self.uuid, self.config)
         if self.config:
             set_local_vars(self, self.config)
         self.ip = kwargs.get("ip", None) or (hasattr(self, "ip") and self.ip) or "0.0.0.0"
