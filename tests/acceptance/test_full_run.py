@@ -105,8 +105,7 @@ def test_full_run(caplog):
             assert any(string in log for log in caplog.messages)
 
         assert len(logs) == 3
-        process, connect, login = logs
-        assert_connect_is_logged(connect, str(PORT))
-        assert process["action"] == "process"
-        assert login["action"] == "login"
-        assert login["username"] == USERNAME
+        logs_by_type = {e["action"]: e for e in logs}
+        assert set(logs_by_type) == {"process", "login", "connection"}
+        assert_connect_is_logged(logs_by_type["connection"], str(PORT))
+        assert logs_by_type["login"]["username"] == USERNAME
