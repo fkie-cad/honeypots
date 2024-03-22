@@ -28,7 +28,7 @@ from pynetdicom.dul import DULServiceProvider
 
 from honeypots.base_server import BaseServer
 from honeypots.helper import (
-    server_arguments,
+    run_single_server,
 )
 
 if TYPE_CHECKING:
@@ -226,12 +226,4 @@ def _dicom_obj_to_dict(pdu) -> dict[str, str | list[dict[str, str]]]:
 
 
 if __name__ == "__main__":
-    parsed = server_arguments()
-    if parsed.docker or parsed.aws or parsed.custom:
-        server = QDicomServer(
-            ip=parsed.ip,
-            port=parsed.port,
-            options=parsed.options,
-            config=parsed.config,
-        )
-        server.run_server()
+    run_single_server(QDicomServer)
