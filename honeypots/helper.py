@@ -22,9 +22,8 @@ from datetime import datetime
 from json import JSONEncoder, loads, JSONDecodeError
 from logging import DEBUG, Formatter, getLogger, Handler, LogRecord
 from logging.handlers import RotatingFileHandler, SysLogHandler
-from os import getuid, scandir
+from os import getuid
 from pathlib import Path
-from signal import SIGTERM
 from socket import AF_INET, SOCK_STREAM, socket
 from sqlite3 import connect as sqlite3_connect
 from sys import stdout
@@ -35,7 +34,6 @@ from urllib.parse import urlparse
 
 import psutil
 from OpenSSL import crypto
-from psutil import process_iter
 from psycopg2 import connect as psycopg2_connect, sql
 
 if TYPE_CHECKING:
@@ -197,29 +195,15 @@ def _set_up_syslog_handler(address: str | None, facility: int | None) -> Handler
     return handler
 
 
-def clean_all():
-    for entry in scandir("."):
-        if entry.is_file() and entry.name.endswith("_server.py"):
-            kill_servers(entry.name)
-
-
-def kill_servers(name):
-    with suppress(Exception):
-        for process in process_iter():
-            cmdline = " ".join(process.cmdline())
-            if "--custom" in cmdline and name in cmdline:
-                process.send_signal(SIGTERM)
-                process.kill()
-
-
-def get_free_port():
-    port = 0
-    with suppress(Exception):
+def get_free_port() -> int:
+    try:
         tcp = socket(AF_INET, SOCK_STREAM)
         tcp.bind(("", 0))
-        addr, port = tcp.getsockname()
+        _, port = tcp.getsockname()
         tcp.close()
-    return port
+    except OSError:
+        logger.error("Could not get a free port")
+        return 0
 
 
 class ComplexEncoder(JSONEncoder):

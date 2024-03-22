@@ -5,9 +5,7 @@ from .elastic_server import QElasticServer
 from .ftp_server import QFTPServer
 from .helper import (
     is_privileged,
-    clean_all,
     get_free_port,
-    kill_servers,
     PostgresClass,
     server_arguments,
     setup_logger,
@@ -75,9 +73,7 @@ __all__ = [
     "QTelnetServer",
     "QVNCServer",
     "is_privileged",
-    "clean_all",
     "get_free_port",
-    "kill_servers",
     "PostgresClass",
     "server_arguments",
     "setup_logger",
