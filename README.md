@@ -262,7 +262,7 @@ qsshserver.kill_server()
 - HL7Server
     - Server: HL7 
     - Port: 2575/tcp
-    - Lib: socketserver
+    - Lib: hl7apy
     - Logs: ip, port and data
 - QHTTPProxyServer
     - Server: HTTP Proxy
