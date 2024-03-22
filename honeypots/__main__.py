@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import logging
 import sys
 from argparse import ArgumentParser, SUPPRESS, Namespace
-from atexit import register
 from functools import wraps
 from os import geteuid
 from signal import alarm, SIGALRM, SIGINT, signal, SIGTERM, SIGTSTP
@@ -51,7 +49,6 @@ from honeypots import (
     QSSHServer,
     QTelnetServer,
     QVNCServer,
-    clean_all,
     is_privileged,
     set_up_error_logging,
     setup_logger,
@@ -60,6 +57,7 @@ from honeypots.helper import load_config
 
 if TYPE_CHECKING:
     from honeypots.base_server import BaseServer
+    from logging import Logger
 
 
 all_servers = {
@@ -156,7 +154,7 @@ def server_timeout(server: BaseServer, name: str):
         logger.info(f"Start testing {name}")
         server.test_server()
     except TimeoutError:
-        logging.error(f"Timeout during test {name}")
+        logger.error(f"Timeout during test {name}")
     logger.info(f"Done testing {name}")
 
 
@@ -178,8 +176,6 @@ class HoneypotsManager:
         if self.options.list:
             for service in all_servers:
                 print(service)
-        elif self.options.kill:
-            clean_all()
         elif self.options.chameleon and self.config_data:
             self._start_chameleon_mode()
         elif self.options.setup:
@@ -188,7 +184,6 @@ class HoneypotsManager:
             self._set_up_honeypots()
 
     def _set_up_honeypots(self):  # noqa: C901
-        register(_exit_handler)
         if self.options.termination_strategy == "input":
             logger.info("Use [Enter] to exit or python3 -m honeypots --kill")
         if self.options.config != "":
@@ -318,7 +313,7 @@ class HoneypotsManager:
         else:
             self._stop_servers()
 
-    def _setup_logging(self) -> logging.Logger:
+    def _setup_logging(self) -> Logger:
         uuid = f"honeypotslogger_main_{str(uuid4())[:8]}"
         if "db_options" in self.config_data:
             drop = "drop" in self.config_data["db_options"]
@@ -408,12 +403,6 @@ def _check_interfaces(sniffer_interface):
         sys.exit(1)
 
 
-def _exit_handler():
-    logger.info("[x] Cleaning")
-    clean_all()
-    sleep(1)
-
-
 class _ArgumentParser(ArgumentParser):
     def error(self, message):
         logger.error(message)
@@ -439,7 +428,6 @@ def _parse_args() -> tuple[Namespace, dict[str, str | int]]:
     arg_parser_setup.add_argument(
         "--list", action="store_true", help="list all available honeypots"
     )
-    arg_parser_setup.add_argument("--kill", action="store_true", help="kill all honeypots")
     arg_parser_setup.add_argument("--verbose", action="store_true", help="Print error msgs")
     arg_parser_optional = arg_parser.add_argument_group("Honeypots options")
     arg_parser_optional.add_argument("--ip", help="Override the IP", metavar="", default="")
