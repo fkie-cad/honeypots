@@ -1,14 +1,17 @@
+import json
 import logging
 import sys
 from contextlib import contextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Event, Thread
 from time import sleep
+from typing import Iterator
 
 from paramiko.client import AutoAddPolicy, SSHClient
 
 from honeypots import QSSHServer
 from honeypots.__main__ import _parse_args, HoneypotsManager
-from tests.conftest import config_for_testing
 from tests.utils import (
     assert_connect_is_logged,
     IP,
@@ -42,6 +45,22 @@ def run_main(manager: HoneypotsManager):
     finally:
         event.set()
         thread.join(timeout=5)
+        assert not thread.is_alive()
+
+
+@contextmanager
+def config_for_testing(custom_config: dict) -> Iterator[Path]:
+    with TemporaryDirectory() as tmp_dir:
+        config = Path(tmp_dir) / "config.json"
+        logs_output_dir = Path(tmp_dir) / "logs"
+        logs_output_dir.mkdir()
+        testing_config = {
+            "logs": "file,terminal,json",
+            "logs_location": str(logs_output_dir.absolute()),
+            **custom_config,
+        }
+        config.write_text(json.dumps(testing_config))
+        yield config
 
 
 def test_full_run(caplog):
