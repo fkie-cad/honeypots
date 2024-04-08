@@ -253,6 +253,20 @@ qsshserver.kill_server()
     - Port: 11112/tcp
     - Lib: pynetdicom
     - Logs: ip, port, events
+    - Custom configuration (through `config.json`):
+      - `"store_images"` (`bool`, default: `False`): start a storage SCP that is able to receive image files
+      - `"storage_dir"` (`str`, default: `"/tmp/dicom_storage"`): the storage directory where received image files are stored
+      - example:
+        ```json
+        {
+          "honeypots": {
+            "dicom": {
+              "store_images": true,
+              "storage_dir": "/tmp/dicom_storage"
+            }
+          }
+        }
+        ```
 - QFTPServer
     - Server: FTP 
     - Port: 21/tcp
