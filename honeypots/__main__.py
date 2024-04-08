@@ -163,8 +163,14 @@ class HoneypotsManager:
         self.options = options
         self.server_args = server_args
         self.config_data: dict = load_config(self.options.config) if self.options.config else {}
+        self._validate_config()
         self.auto = options.auto if geteuid() != 0 else False
         self.honeypots: list[tuple[Any, str, bool]] = []
+
+    def _validate_config(self):
+        for server in self.config_data.get("honeypots", []):
+            if server not in all_servers:
+                logger.warning(f'Config file contains unknown server: "{server}" (ignored)')
 
     def main(self):
         logger.info("For updates, check https://github.com/qeeqbox/honeypots")

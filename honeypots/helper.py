@@ -201,6 +201,7 @@ def get_free_port() -> int:
         tcp.bind(("", 0))
         _, port = tcp.getsockname()
         tcp.close()
+        return port
     except OSError:
         logger.error("Could not get a free port")
         return 0

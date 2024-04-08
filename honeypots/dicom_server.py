@@ -12,9 +12,11 @@ from __future__ import annotations
 
 from contextlib import suppress
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+from pydicom.filewriter import write_file_meta_info
 from pynetdicom import (
     ae,
     ALL_TRANSFER_SYNTAXES,
@@ -50,13 +52,23 @@ class UserIdType(Enum):
 
 
 SUCCESS = 0x0000
+CANNOT_UNDERSTAND = 0xC000
 
 
 class QDicomServer(BaseServer):
     NAME = "dicom_server"
     DEFAULT_PORT = 11112
 
-    def server_main(self):  # noqa: C901
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.store_images = bool(getattr(self, "store_images", False))
+        if hasattr(self, "storage_dir") and isinstance(self.storage_dir, str):
+            self.storage_dir = Path(self.storage_dir)
+        else:
+            self.storage_dir = Path("/tmp/dicom_storage")
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+
+    def server_main(self):  # noqa: C901,PLR0915
         _q_s = self
 
         class CustomDUL(DULServiceProvider):
@@ -98,7 +110,28 @@ class QDicomServer(BaseServer):
                 )
                 super().process_request(request, client_address)
 
-        def handle_login(event: evt.Event, *_) -> tuple[bool, bytes | None]:
+        def handle_store(event: evt.Event) -> int:
+            handle_event(event)  # for logging
+            try:
+                output_file = _q_s.storage_dir / event.request.AffectedSOPInstanceUID
+                with output_file.open("wb") as fp:
+                    preamble = b"\x00" * 128
+                    prefix = b"DICM"
+                    fp.write(preamble + prefix)
+                    write_file_meta_info(fp, event.file_meta)
+                    fp.write(event.request.DataSet.getvalue())
+                _q_s.log(
+                    {
+                        "action": "store_image",
+                        "data": {"path": str(output_file), "size": output_file.stat().st_size},
+                    }
+                )
+                return SUCCESS
+            except Exception as error:
+                _q_s.logger.critical(f"Exception occurred during store event: {error}")
+                return CANNOT_UNDERSTAND
+
+        def handle_login(event: evt.Event) -> tuple[bool, bytes | None]:
             # EVT_USER_ID event
             # see https://pydicom.github.io/pynetdicom/stable/reference/generated/pynetdicom._handlers.doc_handle_userid.html
             user_id_type = UserIdType(event.user_id_type)
@@ -165,11 +198,14 @@ class QDicomServer(BaseServer):
                     }
                 )
             except Exception as error:
-                _q_s.logger.critical(f"exception during event logging: {error}")
+                _q_s.logger.debug(f"exception during event logging: {error}")
             return SUCCESS
 
+        special_handlers = {"EVT_USER_ID": handle_login}
+        if _q_s.store_images:
+            special_handlers["EVT_C_STORE"] = handle_store
         handlers = [
-            (event_, handle_event) if event_.name != "EVT_USER_ID" else (event_, handle_login)
+            (event_, special_handlers.get(event_.name, handle_event))
             for event_ in evt._INTERVENTION_EVENTS
             if event_.name not in UNINTERESTING_EVENTS
         ]
