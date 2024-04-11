@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from socket import AF_INET, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket
+from tempfile import TemporaryDirectory
+from threading import Event, Thread
 from time import sleep
-from typing import TYPE_CHECKING
+from typing import Iterator, TYPE_CHECKING
+from pathlib import Path
 
 from honeypots.helper import wait_for_service
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from honeypots.__main__ import HoneypotsManager
 
 IP = "127.0.0.1"
 USERNAME = "test_user"
@@ -68,3 +71,32 @@ def wait_for_server(port: str | int):
     wait_for_service(int(port))
     yield
     sleep(0.5)  # give the server process some time to write logs
+
+
+@contextmanager
+def run_main(manager: HoneypotsManager):
+    event = Event()
+    thread = Thread(target=manager.main)
+    manager.options.termination_strategy = event
+    try:
+        thread.start()
+        yield
+    finally:
+        event.set()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+
+@contextmanager
+def config_for_testing(custom_config: dict) -> Iterator[Path]:
+    with TemporaryDirectory() as tmp_dir:
+        config = Path(tmp_dir) / "config.json"
+        logs_output_dir = Path(tmp_dir) / "logs"
+        logs_output_dir.mkdir()
+        testing_config = {
+            "logs": "file,terminal,json",
+            "logs_location": str(logs_output_dir.absolute()),
+            **custom_config,
+        }
+        config.write_text(json.dumps(testing_config))
+        yield config
