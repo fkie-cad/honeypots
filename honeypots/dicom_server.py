@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+from pydicom import dcmread
 from pydicom.filewriter import write_file_meta_info
 from pynetdicom import (
     ae,
@@ -25,6 +26,7 @@ from pynetdicom import (
     RelevantPatientInformationPresentationContexts,
     VerificationPresentationContexts,
     QueryRetrievePresentationContexts,
+    tests,
 )
 from pynetdicom.dul import DULServiceProvider
 
@@ -41,6 +43,7 @@ UNINTERESTING_EVENTS = {
     "EVT_SOP_EXTENDED",
     "EVT_SOP_COMMON",
 }
+GET_REQUEST_DS = dcmread(Path(tests.__file__).parent / "dicom_files" / "CTImageStorage.dcm")
 
 
 class UserIdType(Enum):
@@ -52,7 +55,9 @@ class UserIdType(Enum):
 
 
 SUCCESS = 0x0000
-CANNOT_UNDERSTAND = 0xC000
+FAILURE = 0xC000
+CANCEL = 0xFE00
+PENDING = 0xFF00
 
 
 class QDicomServer(BaseServer):
@@ -80,12 +85,14 @@ class QDicomServer(BaseServer):
             def _decode_pdu(self, bytestream: bytearray):
                 pdu, event = super()._decode_pdu(bytestream)
                 try:
-                    _q_s.log(
-                        {
-                            "action": type(pdu).__name__.replace("_", "-"),
-                            "data": _dicom_obj_to_dict(pdu),
-                        }
-                    )
+                    pdu_type = type(pdu).__name__.replace("_", "-")
+                    if pdu_type != "P-DATA-TF":
+                        _q_s.log(
+                            {
+                                "action": pdu_type,
+                                "data": _dicom_obj_to_dict(pdu),
+                            }
+                        )
                 except Exception as error:
                     _q_s.logger.debug(f"Error while decoding PDU: {error}")
                 return pdu, event
@@ -111,7 +118,7 @@ class QDicomServer(BaseServer):
                 super().process_request(request, client_address)
 
         def handle_store(event: evt.Event) -> int:
-            handle_event(event)  # for logging
+            _log_event(event)
             try:
                 output_file = _q_s.storage_dir / event.request.AffectedSOPInstanceUID
                 with output_file.open("wb") as fp:
@@ -129,10 +136,45 @@ class QDicomServer(BaseServer):
                 return SUCCESS
             except Exception as error:
                 _q_s.logger.critical(f"Exception occurred during store event: {error}")
-                return CANNOT_UNDERSTAND
+                return FAILURE
+
+        def handle_get(event):
+            # C-GET event
+            # see docs: https://pydicom.github.io/pynetdicom/stable/reference/generated/pynetdicom._handlers.doc_handle_c_get.html#pynetdicom._handlers.doc_handle_c_get
+            dataset = event.identifier
+            log_data = {
+                key: getattr(dataset, key, None)
+                for key in (
+                    "QueryRetrieveLevel",
+                    "PatientID",
+                    "StudyInstanceUID",
+                    "SeriesInstanceUID",
+                )
+            }
+            _log_event(event, log_data)
+
+            if "QueryRetrieveLevel" not in dataset:
+                # if this is a valid GET request, there should be a retrieve level
+                yield FAILURE, None
+                return
+
+            # we simply always return the same demo dataset instead of
+            # checking if anything actually matched the IDs in the request
+            instances = [GET_REQUEST_DS, GET_REQUEST_DS]
+
+            # first yield the number of operations
+            total = len(instances)
+            yield total
+
+            # then yield the "matching" instance
+            for instance in instances:
+                if event.is_cancelled:
+                    yield CANCEL, None
+                    return
+                yield PENDING, instance
 
         def handle_login(event: evt.Event) -> tuple[bool, bytes | None]:
-            # EVT_USER_ID event
+            # USER-ID event
             # see https://pydicom.github.io/pynetdicom/stable/reference/generated/pynetdicom._handlers.doc_handle_userid.html
             user_id_type = UserIdType(event.user_id_type)
             if user_id_type == UserIdType.username_and_passcode:
@@ -178,12 +220,14 @@ class QDicomServer(BaseServer):
 
         def handle_event(event: evt.Event, *_):
             # generic event handler
+            _log_event(event)
+            return SUCCESS
+
+        def _log_event(event, additional_data: dict | None = None):
+            additional_data = additional_data or {}
             try:
-                data = {
-                    "description": event.event.description,
-                }
                 if hasattr(event, "context"):
-                    data.update(
+                    additional_data.update(
                         {
                             "abstract_syntax": event.context.abstract_syntax,
                             "transfer_syntax": event.context.transfer_syntax,
@@ -194,16 +238,21 @@ class QDicomServer(BaseServer):
                         "action": event.event.name.replace("EVT_", "").replace("_", "-"),
                         "src_ip": event.assoc.requestor.address,
                         "src_port": event.assoc.requestor.port,
-                        "data": data,
+                        "data": {
+                            "description": event.event.description,
+                            **additional_data,
+                        },
                     }
                 )
             except Exception as error:
                 _q_s.logger.debug(f"exception during event logging: {error}")
-            return SUCCESS
 
-        special_handlers = {"EVT_USER_ID": handle_login}
+        special_handlers = {
+            evt.EVT_USER_ID.name: handle_login,
+            evt.EVT_C_GET.name: handle_get,
+        }
         if _q_s.store_images:
-            special_handlers["EVT_C_STORE"] = handle_store
+            special_handlers[evt.EVT_C_STORE.name] = handle_store
         handlers = [
             (event_, special_handlers.get(event_.name, handle_event))
             for event_ in evt._INTERVENTION_EVENTS
@@ -224,8 +273,13 @@ class QDicomServer(BaseServer):
 
         for context in app_entity.supported_contexts:
             # only play the server role, not the client
-            context.scp_role = True
-            context.scu_role = False
+            if context in AllStoragePresentationContexts:
+                # except when presenting things (get request) then the server is also the SCU
+                context.scp_role = True
+                context.scu_role = True
+            else:
+                context.scp_role = True
+                context.scu_role = False
 
         with patch("pynetdicom.association.DULServiceProvider", CustomDUL), patch(
             "pynetdicom.ae.AssociationServer", CustomAssociationServer

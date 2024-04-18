@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from multiprocessing import Event
 from pathlib import Path
 from shlex import split
 from subprocess import run
@@ -8,11 +9,15 @@ from time import sleep
 import pytest
 from pydicom import dcmread, Dataset
 from pydicom.uid import CTImageStorage
-from pynetdicom.sop_class import PatientRootQueryRetrieveInformationModelFind
+from pynetdicom.sop_class import (
+    PatientRootQueryRetrieveInformationModelFind,
+    PatientRootQueryRetrieveInformationModelGet,
+)
 from pynetdicom.pdu_primitives import UserIdentityNegotiation
-from pynetdicom import AE, tests
+from pynetdicom import AE, tests, build_role, evt
 
 from honeypots import QDicomServer
+from honeypots.dicom_server import SUCCESS
 from .utils import (
     assert_connect_is_logged,
     assert_login_is_logged,
@@ -41,14 +46,13 @@ def test_dicom_echo(server_logs):
 
     logs = load_logs_from_file(server_logs)
 
-    assert len(logs) == 5
+    assert len(logs) == 4
     connect, *events = logs
     assert_connect_is_logged(connect, PORT)
 
     assert events[0]["action"] == "A-ASSOCIATE-RQ"
-    assert events[1]["action"] == "P-DATA-TF"
-    assert events[2]["action"] == "C-ECHO"
-    assert events[3]["action"] == "A-RELEASE-RQ"
+    assert events[1]["action"] == "C-ECHO"
+    assert events[2]["action"] == "A-RELEASE-RQ"
 
 
 @pytest.mark.parametrize(
@@ -80,10 +84,10 @@ def test_login(server_logs):
     assert release["action"] == "A-RELEASE-RQ"
 
 
-def _retry_association(ae: AE, port: int, ext_neg=None):
+def _retry_association(ae: AE, port: int, ext_neg=None, handlers=None):
     for _ in range(RETRIES):
         # this is somehow a bit flaky so we retry here
-        association = ae.associate(IP, port, ext_neg=ext_neg)
+        association = ae.associate(IP, port, ext_neg=ext_neg, evt_handlers=handlers)
         if association.is_established:
             return association
         sleep(1)
@@ -116,10 +120,62 @@ def test_store(server_logs):
         association.release()
 
     assert isinstance(response, Dataset)
-    assert response.Status == 0x0000  # success
+    assert response.Status == SUCCESS
 
     logs = load_logs_from_file(server_logs)
     assert len(logs) > 1
-    logs_by_action = {entry["action"]: entry for entry in logs}
+    logs_by_action = _get_logs_by_action(logs)
     assert "store_image" in logs_by_action
     assert logs_by_action["store_image"]["data"]["size"] == "39102"
+
+
+def _get_logs_by_action(logs):
+    return {entry["action"]: entry for entry in logs}
+
+
+_event = Event()
+
+
+def _handle_store(event):
+    dataset = event.dataset
+    dataset.file_meta = event.file_meta
+    assert dataset.PatientID == "1CT1"
+    _event.set()
+    return SUCCESS
+
+
+@pytest.mark.parametrize(
+    "server_logs",
+    [{"server": QDicomServer, "port": PORT + 3}],
+    indirect=True,
+)
+def test_get(server_logs):
+    handlers = [(evt.EVT_C_STORE, _handle_store)]
+
+    ae = AE()
+    ae.add_requested_context(PatientRootQueryRetrieveInformationModelGet)
+    ae.add_requested_context(CTImageStorage)
+    # the server sends us back the requested images so we become the SCP here
+    role = build_role(CTImageStorage, scp_role=True)
+
+    ds = Dataset()
+    ds.QueryRetrieveLevel = "SERIES"
+    ds.PatientID = "1234567"
+    ds.StudyInstanceUID = "1.2.3"
+    ds.SeriesInstanceUID = "1.2.3.4"
+
+    with wait_for_server(PORT + 3):
+        association = _retry_association(ae, PORT + 3, ext_neg=[role], handlers=handlers)
+        responses = list(association.send_c_get(ds, PatientRootQueryRetrieveInformationModelGet))
+        _event.wait(timeout=2)
+        association.release()
+
+    logs = load_logs_from_file(server_logs)
+
+    assert len(logs) > 3
+    logs_by_action = _get_logs_by_action(logs)
+    assert "C-GET" in logs_by_action
+    assert logs_by_action["C-GET"]["data"]["PatientID"] == ds.PatientID
+
+    assert len(responses) == 3
+    assert _event.is_set()
