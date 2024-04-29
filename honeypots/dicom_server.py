@@ -141,6 +141,41 @@ class QDicomServer(BaseServer):
         def handle_get(event):
             # C-GET event
             # see docs: https://pydicom.github.io/pynetdicom/stable/reference/generated/pynetdicom._handlers.doc_handle_c_get.html#pynetdicom._handlers.doc_handle_c_get
+            _log_get_move_event(event)
+
+            if not event.identifier or "QueryRetrieveLevel" not in event.identifier:
+                # if this is a valid GET request, there should be a retrieve level
+                yield FAILURE, None
+                return
+
+            # we simply always return the same demo dataset instead of
+            # checking if anything actually matched the IDs in the request
+            instances = [GET_REQUEST_DS]
+
+            # first yield the number of operations
+            yield len(instances)
+
+            # then yield the "matching" instance
+            for instance in instances:
+                if event.is_cancelled:
+                    yield CANCEL, None
+                    return
+                yield PENDING, instance
+
+        def handle_move(event):
+            # C-MOVE request event
+            _log_get_move_event(event)
+
+            if not event.identifier or "QueryRetrieveLevel" not in event.identifier:
+                yield FAILURE, None
+                return
+
+            # we can't actually know the requested destination server (and even if it is the
+            # same one that send the request we don't know the port), so we yield (None, None)
+            # which results in the server returning 0xA801 (move destination unknown)
+            yield None, None
+
+        def _log_get_move_event(event):
             dataset = event.identifier
             log_data = {
                 key: getattr(dataset, key, None)
@@ -152,26 +187,6 @@ class QDicomServer(BaseServer):
                 )
             }
             _log_event(event, log_data)
-
-            if "QueryRetrieveLevel" not in dataset:
-                # if this is a valid GET request, there should be a retrieve level
-                yield FAILURE, None
-                return
-
-            # we simply always return the same demo dataset instead of
-            # checking if anything actually matched the IDs in the request
-            instances = [GET_REQUEST_DS, GET_REQUEST_DS]
-
-            # first yield the number of operations
-            total = len(instances)
-            yield total
-
-            # then yield the "matching" instance
-            for instance in instances:
-                if event.is_cancelled:
-                    yield CANCEL, None
-                    return
-                yield PENDING, instance
 
         def handle_login(event: evt.Event) -> tuple[bool, bytes | None]:
             # USER-ID event
@@ -250,6 +265,7 @@ class QDicomServer(BaseServer):
         special_handlers = {
             evt.EVT_USER_ID.name: handle_login,
             evt.EVT_C_GET.name: handle_get,
+            evt.EVT_C_MOVE.name: handle_move,
         }
         if _q_s.store_images:
             special_handlers[evt.EVT_C_STORE.name] = handle_store
@@ -284,7 +300,11 @@ class QDicomServer(BaseServer):
         with patch("pynetdicom.association.DULServiceProvider", CustomDUL), patch(
             "pynetdicom.ae.AssociationServer", CustomAssociationServer
         ):
-            app_entity.start_server((self.ip, self.port), block=True, evt_handlers=handlers)
+            app_entity.start_server(
+                (self.ip, self.port),
+                block=True,
+                evt_handlers=handlers,
+            )
 
 
 def _dicom_obj_to_dict(pdu) -> dict[str, str | list[dict[str, str]]]:

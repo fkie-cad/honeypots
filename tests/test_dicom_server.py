@@ -12,9 +12,10 @@ from pydicom.uid import CTImageStorage
 from pynetdicom.sop_class import (
     PatientRootQueryRetrieveInformationModelFind,
     PatientRootQueryRetrieveInformationModelGet,
+    PatientRootQueryRetrieveInformationModelMove,
 )
 from pynetdicom.pdu_primitives import UserIdentityNegotiation
-from pynetdicom import AE, tests, build_role, evt
+from pynetdicom import AE, tests, build_role, evt, StoragePresentationContexts
 
 from honeypots import QDicomServer
 from honeypots.dicom_server import SUCCESS
@@ -31,6 +32,7 @@ from .utils import (
 USER_AND_PW = 2
 RETRIES = 3
 PORT = 61112
+MOVE_DESTINATION_UNKNOWN = 0xA801
 
 
 @pytest.mark.parametrize(
@@ -158,11 +160,7 @@ def test_get(server_logs):
     # the server sends us back the requested images so we become the SCP here
     role = build_role(CTImageStorage, scp_role=True)
 
-    ds = Dataset()
-    ds.QueryRetrieveLevel = "SERIES"
-    ds.PatientID = "1234567"
-    ds.StudyInstanceUID = "1.2.3"
-    ds.SeriesInstanceUID = "1.2.3.4"
+    ds = _get_test_dataset()
 
     with wait_for_server(PORT + 3):
         association = _retry_association(ae, PORT + 3, ext_neg=[role], handlers=handlers)
@@ -177,5 +175,47 @@ def test_get(server_logs):
     assert "C-GET" in logs_by_action
     assert logs_by_action["C-GET"]["data"]["PatientID"] == ds.PatientID
 
-    assert len(responses) == 3
+    assert len(responses) == 2
     assert _event.is_set()
+
+
+@pytest.mark.parametrize(
+    "server_logs",
+    [{"server": QDicomServer, "port": PORT + 4}],
+    indirect=True,
+)
+def test_move(server_logs):
+    ae = AE()
+    ae.add_requested_context(PatientRootQueryRetrieveInformationModelMove)
+    ae.supported_contexts = StoragePresentationContexts
+
+    ds = _get_test_dataset()
+
+    with wait_for_server(PORT + 4):
+        association = _retry_association(ae, PORT + 4)
+        responses = list(
+            association.send_c_move(
+                ds, "some unknown AE", PatientRootQueryRetrieveInformationModelMove
+            )
+        )
+        association.release()
+
+    logs = load_logs_from_file(server_logs)
+
+    assert len(logs) > 2
+    logs_by_action = _get_logs_by_action(logs)
+    assert "C-MOVE" in logs_by_action
+    assert logs_by_action["C-MOVE"]["data"]["PatientID"] == ds.PatientID
+
+    assert len(responses) == 1
+    status, _ = responses[0]
+    assert status.Status == MOVE_DESTINATION_UNKNOWN
+
+
+def _get_test_dataset():
+    ds = Dataset()
+    ds.QueryRetrieveLevel = "SERIES"
+    ds.PatientID = "1234567"
+    ds.StudyInstanceUID = "1.2.3"
+    ds.SeriesInstanceUID = "1.2.3.4"
+    return ds
